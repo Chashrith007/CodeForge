@@ -1,9 +1,9 @@
-from uuid import uuid4
+from database import get_connection
+from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI()
-submissions = {}
 
 class SubmissionRequest(BaseModel):
     code: str = Field(min_length=1, max_length=10000)
@@ -25,22 +25,37 @@ def square(number: int):
     return {"number": number, "square": number * number}
 
 
-@app.post("/submissions")
-def submit_code(submission: SubmissionRequest):
-    submission_id = str(uuid4())
-
-    record = {
-        "id": submission_id,
-        "status": "received",
-        "characters": len(submission.code),
-    }
-
-    submissions[submission_id] = record
-    return record
-
 @app.get("/submissions/{submission_id}")
-def get_submission(submission_id: str):
-    if submission_id not in submissions:
+def get_submission(submission_id: UUID):
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            SELECT id, status, char_length(code) AS characters
+            FROM submissions
+            WHERE id = %s
+            """,
+            (submission_id,),
+        )
+        record = cursor.fetchone()
+
+    if record is None:
         raise HTTPException(status_code=404, detail="Submission not found")
 
-    return submissions[submission_id]    
+    return record
+
+@app.post("/submissions")
+def submit_code(submission: SubmissionRequest):
+    submission_id = uuid4()
+
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO submissions (id, code)
+            VALUES (%s, %s)
+            RETURNING id, status, char_length(code) AS characters
+            """,
+            (submission_id, submission.code),
+        )
+        record = cursor.fetchone()
+
+    return record

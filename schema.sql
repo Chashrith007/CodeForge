@@ -1,0 +1,6 @@
+CREATE TABLE submissions (
+    id UUID PRIMARY KEY,
+    code TEXT NOT NULL CHECK (char_length(code) BETWEEN 1 AND 10000),
+    status TEXT NOT NULL DEFAULT 'received',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
