@@ -1,19 +1,9 @@
-from redis import Redis
-from redis.exceptions import RedisError
 from database import get_connection
 from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 app = FastAPI()
-
-queue_client = Redis(
-    host="127.0.0.1",
-    port=6379,
-    decode_responses=True,
-    socket_connect_timeout=5,
-    socket_timeout=5,
-)
 
 class SubmissionRequest(BaseModel):
     code: str = Field(min_length=1, max_length=10000)
@@ -67,16 +57,5 @@ def submit_code(submission: SubmissionRequest):
             (submission_id, submission.code),
         )
         record = cursor.fetchone()
-
-    try:
-        queue_client.rpush("codeforge:submissions", str(submission_id))
-    except RedisError:
-        raise HTTPException(
-            status_code=503,
-            detail={
-                "message": "Submission saved, but queue delivery could not be confirmed.",
-                "id": str(submission_id),
-            },
-        )
 
     return record
