@@ -1,10 +1,14 @@
 import time
 from uuid import UUID
+
 from redis import Redis
 from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
 from redis.retry import Retry
+
 from database import get_connection
+from runner import run_code
+
 
 client = Redis(
     host="127.0.0.1",
@@ -23,7 +27,7 @@ def process_submission(submission_id):
             UPDATE submissions
             SET status = 'running'
             WHERE id = %s AND status = 'received'
-            RETURNING id
+            RETURNING id, code
             """,
             (submission_id,),
         ).fetchone()
@@ -33,19 +37,41 @@ def process_submission(submission_id):
         return
 
     print(f"Running: {submission_id}", flush=True)
-    time.sleep(3)
+
+    try:
+        result = run_code(record["code"])
+    except Exception as error:
+        print(
+            f"Runner failed for {submission_id}: {error}",
+            flush=True,
+        )
+        result = {
+            "status": "runner_error",
+            "output": "Execution could not be completed. Check worker logs.",
+            "exit_code": None,
+        }
 
     with get_connection() as connection:
         connection.execute(
             """
             UPDATE submissions
-            SET status = 'completed'
+            SET status = %s,
+                output = %s,
+                exit_code = %s
             WHERE id = %s AND status = 'running'
             """,
-            (submission_id,),
+            (
+                result["status"],
+                result["output"],
+                result["exit_code"],
+                submission_id,
+            ),
         )
 
-    print(f"Completed: {submission_id}", flush=True)
+    print(
+        f"Finished: {submission_id} | status={result['status']}",
+        flush=True,
+    )
 
 
 def run_worker():

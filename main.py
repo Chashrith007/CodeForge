@@ -50,7 +50,11 @@ def get_submission(submission_id: UUID):
     with get_connection() as connection:
         cursor = connection.execute(
             """
-            SELECT id, status, char_length(code) AS characters
+            SELECT id,
+                   status,
+                   char_length(code) AS characters,
+                   output,
+                   exit_code
             FROM submissions
             WHERE id = %s
             """,
