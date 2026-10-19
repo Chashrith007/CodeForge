@@ -7,6 +7,8 @@ from redis.exceptions import RedisError
 from redis.retry import Retry
 
 from database import get_connection
+from judge import judge_code
+from problems import PROBLEMS
 from runner import run_code
 
 
@@ -20,14 +22,55 @@ client = Redis(
 )
 
 
+def execute_submission(record):
+    problem_id = record["problem_id"]
+
+    if problem_id is None:
+        result = run_code(record["code"])
+
+        return {
+            **result,
+            "verdict": None,
+            "tests_passed": None,
+            "tests_total": None,
+        }
+
+    problem = PROBLEMS.get(problem_id)
+
+    if problem is None:
+        raise ValueError(f"Unknown problem: {problem_id}")
+
+    judged = judge_code(record["code"], problem["test_cases"])
+    verdict = judged["verdict"]
+
+    if verdict in ("accepted", "wrong_answer"):
+        status = "completed"
+    else:
+        status = verdict
+
+    return {
+        "status": status,
+        "output": None,
+        "exit_code": None,
+        "verdict": verdict,
+        "tests_passed": judged["passed"],
+        "tests_total": judged["total"],
+    }
+
+
 def process_submission(submission_id):
     with get_connection() as connection:
         record = connection.execute(
             """
             UPDATE submissions
-            SET status = 'running'
+            SET status = 'running',
+                output = NULL,
+                exit_code = NULL,
+                verdict = NULL,
+                tests_passed = NULL,
+                tests_total = NULL
             WHERE id = %s AND status = 'received'
-            RETURNING id, code
+            RETURNING id, code, problem_id
             """,
             (submission_id,),
         ).fetchone()
@@ -39,16 +82,24 @@ def process_submission(submission_id):
     print(f"Running: {submission_id}", flush=True)
 
     try:
-        result = run_code(record["code"])
+        result = execute_submission(record)
     except Exception as error:
         print(
-            f"Runner failed for {submission_id}: {error}",
+            f"Execution failed for {submission_id}: {error}",
             flush=True,
         )
+
         result = {
             "status": "runner_error",
-            "output": "Execution could not be completed. Check worker logs.",
+            "output": None,
             "exit_code": None,
+            "verdict": (
+                "runner_error"
+                if record["problem_id"] is not None
+                else None
+            ),
+            "tests_passed": None,
+            "tests_total": None,
         }
 
     with get_connection() as connection:
@@ -57,19 +108,27 @@ def process_submission(submission_id):
             UPDATE submissions
             SET status = %s,
                 output = %s,
-                exit_code = %s
+                exit_code = %s,
+                verdict = %s,
+                tests_passed = %s,
+                tests_total = %s
             WHERE id = %s AND status = 'running'
             """,
             (
                 result["status"],
                 result["output"],
                 result["exit_code"],
+                result["verdict"],
+                result["tests_passed"],
+                result["tests_total"],
                 submission_id,
             ),
         )
 
     print(
-        f"Finished: {submission_id} | status={result['status']}",
+        f"Finished: {submission_id} | "
+        f"status={result['status']} | "
+        f"verdict={result['verdict']}",
         flush=True,
     )
 
@@ -80,9 +139,15 @@ def run_worker():
     try:
         while True:
             try:
-                item = client.blpop("codeforge:submissions", timeout=2)
+                item = client.blpop(
+                    "codeforge:submissions",
+                    timeout=2,
+                )
             except RedisError:
-                print("Redis unavailable. Retrying in 2 seconds.", flush=True)
+                print(
+                    "Redis unavailable. Retrying in 2 seconds.",
+                    flush=True,
+                )
                 time.sleep(2)
                 continue
 

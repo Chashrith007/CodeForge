@@ -8,6 +8,7 @@ from redis.exceptions import RedisError
 from redis.retry import Retry
 
 from database import get_connection
+from problems import PROBLEMS, get_public_problem
 
 app = FastAPI()
 
@@ -23,6 +24,7 @@ queue_client = Redis(
 
 class SubmissionRequest(BaseModel):
     code: str = Field(min_length=1, max_length=10000)
+    problem_id: str | None = Field(default=None, max_length=100)
 
 
 @app.get("/health")
@@ -32,7 +34,7 @@ def health():
 
 @app.get("/about")
 def about():
-    return {"name": "CodeForge", "purpose": "Run code"}
+    return {"name": "CodeForge", "purpose": "Run and judge Python code"}
 
 
 @app.get("/greet")
@@ -45,51 +47,97 @@ def square(number: int):
     return {"number": number, "square": number * number}
 
 
+@app.get("/problems")
+def list_problems():
+    return [
+        {"id": problem_id, "title": problem["title"]}
+        for problem_id, problem in PROBLEMS.items()
+    ]
+
+
+@app.get("/problems/{problem_id}")
+def get_problem(problem_id: str):
+    if problem_id not in PROBLEMS:
+        raise HTTPException(
+            status_code=404,
+            detail="Problem not found",
+        )
+
+    return get_public_problem(problem_id)
+
+
 @app.get("/submissions/{submission_id}")
 def get_submission(submission_id: UUID):
     with get_connection() as connection:
-        cursor = connection.execute(
+        record = connection.execute(
             """
             SELECT id,
                    status,
                    char_length(code) AS characters,
                    output,
-                   exit_code
+                   exit_code,
+                   problem_id,
+                   verdict,
+                   tests_passed,
+                   tests_total
             FROM submissions
             WHERE id = %s
             """,
             (submission_id,),
-        )
-        record = cursor.fetchone()
+        ).fetchone()
 
     if record is None:
-        raise HTTPException(status_code=404, detail="Submission not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Submission not found",
+        )
 
     return record
 
 
 @app.post("/submissions")
 def submit_code(submission: SubmissionRequest):
+    if (
+        submission.problem_id is not None
+        and submission.problem_id not in PROBLEMS
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Problem not found",
+        )
+
     submission_id = uuid4()
 
     with get_connection() as connection:
-        cursor = connection.execute(
+        record = connection.execute(
             """
-            INSERT INTO submissions (id, code)
-            VALUES (%s, %s)
-            RETURNING id, status, char_length(code) AS characters
+            INSERT INTO submissions (id, code, problem_id)
+            VALUES (%s, %s, %s)
+            RETURNING id,
+                      status,
+                      char_length(code) AS characters,
+                      problem_id
             """,
-            (submission_id, submission.code),
-        )
-        record = cursor.fetchone()
+            (
+                submission_id,
+                submission.code,
+                submission.problem_id,
+            ),
+        ).fetchone()
 
     try:
-        queue_client.rpush("codeforge:submissions", str(submission_id))
+        queue_client.rpush(
+            "codeforge:submissions",
+            str(submission_id),
+        )
     except RedisError:
         raise HTTPException(
             status_code=503,
             detail={
-                "message": "Submission saved, but queue delivery could not be confirmed.",
+                "message": (
+                    "Submission saved, but queue delivery "
+                    "could not be confirmed."
+                ),
                 "id": str(submission_id),
             },
         )

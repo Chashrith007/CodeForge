@@ -1,13 +1,27 @@
 import subprocess
+import tempfile
 import threading
 import time
 from uuid import uuid4
 
-OUTPUT_LIMIT = 16_384  # Keep at most 16 KiB of combined stdout and stderr.
-DOCKER_DEADLINE = 60  # Includes Docker startup, unlike the inner five-second limit.
+OUTPUT_LIMIT = 16_384
+INPUT_LIMIT = 16_384
+DOCKER_DEADLINE = 60
 
 
-def run_code(code):
+def run_code(code, stdin_text=""):
+    input_bytes = stdin_text.encode("utf-8")
+
+    if len(input_bytes) > INPUT_LIMIT:
+        raise ValueError("Test input exceeds the 16 KiB limit.")
+
+    with tempfile.TemporaryFile() as input_file:
+        input_file.write(input_bytes)
+        input_file.seek(0)
+        return _run_container(code, input_file)
+
+
+def _run_container(code, input_file):
     name = f"codeforge-run-{uuid4().hex}"
     output = bytearray()
     overflow = threading.Event()
@@ -18,6 +32,7 @@ def run_code(code):
 
     command = [
         "docker", "run", "--name", name, "--pull", "never",
+        "-i",
         "--network", "none",
         "--memory", "128m", "--memory-swap", "128m",
         "--cpus", "0.5", "--pids-limit", "32",
@@ -36,8 +51,10 @@ def run_code(code):
                 chunk = process.stdout.read1(4096)
                 if not chunk:
                     break
+
                 remaining = OUTPUT_LIMIT - len(output)
                 output.extend(chunk[:remaining])
+
                 if len(chunk) > remaining:
                     overflow.set()
                     break
@@ -48,31 +65,39 @@ def run_code(code):
         started = time.monotonic()
         process = subprocess.Popen(
             command,
-            stdin=subprocess.DEVNULL,
+            stdin=input_file,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             shell=False,
         )
-        reader = threading.Thread(target=collect_output, daemon=True)
+
+        reader = threading.Thread(
+            target=collect_output,
+            daemon=True,
+        )
         reader.start()
 
         while process.poll() is None:
             if overflow.is_set():
                 reason = "output_limit"
                 break
+
             if read_failed.is_set():
                 reason = "runner_error"
                 break
+
             if time.monotonic() - started > DOCKER_DEADLINE:
                 reason = "runner_timeout"
                 break
+
             time.sleep(0.05)
 
     finally:
-        # Stopping the Docker CLI alone does not guarantee the container stopped.
+        # Removing the container stops it even if the Docker CLI was killed.
         try:
             if process is not None and process.poll() is None:
                 process.kill()
+
             cleanup = subprocess.run(
                 ["docker", "rm", "--force", name],
                 capture_output=True,
@@ -80,15 +105,23 @@ def run_code(code):
                 timeout=10,
                 shell=False,
             )
+
             if cleanup.returncode != 0:
-                raise RuntimeError(f"Cleanup not confirmed for {name}: {cleanup.stderr.strip()}")
+                raise RuntimeError(
+                    f"Cleanup not confirmed for {name}: "
+                    f"{cleanup.stderr.strip()}"
+                )
         finally:
             if process is not None:
                 process.wait(timeout=5)
+
             if reader is not None:
                 reader.join(timeout=5)
                 if reader.is_alive():
-                    raise RuntimeError(f"Output reader did not stop for {name}")
+                    raise RuntimeError(
+                        f"Output reader did not stop for {name}"
+                    )
+
             if process is not None and process.stdout is not None:
                 process.stdout.close()
 
