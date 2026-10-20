@@ -1,16 +1,60 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const wait = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 function App() {
-  const [code, setCode] = useState(
-    'a, b = map(int, input().split())\nprint(a + b)'
-  )
+  const [problem, setProblem] = useState(null)
+  const [problemError, setProblemError] = useState('')
+  const [code, setCode] = useState('')
   const [message, setMessage] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submissionId, setSubmissionId] = useState(null)
   const [result, setResult] = useState(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+
+    async function loadProblem() {
+      try {
+        const response = await fetch(
+          '/api/problems/add-two-integers',
+          {
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(10000),
+            ]),
+          }
+        )
+
+        if (!response.ok) {
+          throw new Error(`Problem request failed: ${response.status}`)
+        }
+
+        const data = await response.json()
+
+        if (active) {
+          setProblem(data)
+          setCode(data.starter_code)
+        }
+      } catch {
+        if (active) {
+          setProblemError(
+            'Could not load the problem. Check that the API is ' +
+            'running, then refresh this page.'
+          )
+        }
+      }
+    }
+
+    loadProblem()
+
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [])
 
   async function checkResult(id) {
     for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -46,6 +90,8 @@ function App() {
   }
 
   async function submitSolution() {
+    if (!problem || isSubmitting) return
+
     setIsSubmitting(true)
     setSubmissionId(null)
     setResult(null)
@@ -60,7 +106,7 @@ function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          problem_id: 'add-two-integers',
+          problem_id: problem.id,
           code: code,
         }),
         signal: AbortSignal.timeout(10000),
@@ -101,7 +147,7 @@ function App() {
   }
 
   async function refreshResult() {
-    if (!submissionId) return
+    if (!submissionId || isSubmitting) return
 
     setIsSubmitting(true)
     setMessage('Checking result...')
@@ -115,13 +161,44 @@ function App() {
     }
   }
 
+  if (problemError) {
+    return (
+      <main>
+        <h1>CodeForge</h1>
+        <p role="alert">{problemError}</p>
+      </main>
+    )
+  }
+
+  if (!problem) {
+    return (
+      <main>
+        <h1>CodeForge</h1>
+        <p role="status">Loading problem...</p>
+      </main>
+    )
+  }
+
   return (
     <main>
       <h1>CodeForge</h1>
 
-      <h2>Add Two Integers</h2>
-      <p>Read two space-separated integers and print their sum.</p>
-      <p>Example: input 3 5 → expected output 8.</p>
+      <section aria-label="Problem description">
+        <h2>{problem.title}</h2>
+        <p>{problem.description}</p>
+
+        <h3>Input format</h3>
+        <p>{problem.input_format}</p>
+
+        <h3>Output format</h3>
+        <p>{problem.output_format}</p>
+
+        <h3>Example input</h3>
+        <pre>{problem.example_input}</pre>
+
+        <h3>Expected output</h3>
+        <pre>{problem.example_output}</pre>
+      </section>
 
       <label htmlFor="code">Python solution</label>
 
