@@ -110,3 +110,12 @@ p {
     margin-right: 0;
   }
 }
+
+nav button[aria-pressed="true"] {
+  background: #fbbf24;
+  color: #1e293b;
+}
+
+#stdin {
+  min-height: 110px;
+}

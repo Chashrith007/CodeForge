@@ -1,7 +1,7 @@
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from redis import Redis
 from redis.backoff import NoBackoff
 from redis.exceptions import RedisError
@@ -25,6 +25,14 @@ queue_client = Redis(
 class SubmissionRequest(BaseModel):
     code: str = Field(min_length=1, max_length=10000)
     problem_id: str | None = Field(default=None, max_length=100)
+    stdin: str = Field(default="", max_length=16384)
+
+    @field_validator("stdin")
+    @classmethod
+    def validate_stdin(cls, value):
+        if len(value.encode("utf-8")) > 16384:
+            raise ValueError("Input must not exceed 16384 UTF-8 bytes.")
+        return value
 
 
 @app.get("/health")
@@ -97,22 +105,26 @@ def get_submission(submission_id: UUID):
 
 @app.post("/submissions")
 def submit_code(submission: SubmissionRequest):
-    if (
-        submission.problem_id is not None
-        and submission.problem_id not in PROBLEMS
-    ):
-        raise HTTPException(
-            status_code=404,
-            detail="Problem not found",
-        )
+    if submission.problem_id is not None:
+        if submission.problem_id not in PROBLEMS:
+            raise HTTPException(
+                status_code=404,
+                detail="Problem not found",
+            )
+
+        if submission.stdin != "":
+            raise HTTPException(
+                status_code=422,
+                detail="Challenge submissions use predefined test input.",
+            )
 
     submission_id = uuid4()
 
     with get_connection() as connection:
         record = connection.execute(
             """
-            INSERT INTO submissions (id, code, problem_id)
-            VALUES (%s, %s, %s)
+            INSERT INTO submissions (id, code, problem_id, stdin)
+            VALUES (%s, %s, %s, %s)
             RETURNING id,
                       status,
                       char_length(code) AS characters,
@@ -122,6 +134,7 @@ def submit_code(submission: SubmissionRequest):
                 submission_id,
                 submission.code,
                 submission.problem_id,
+                submission.stdin,
             ),
         ).fetchone()
 

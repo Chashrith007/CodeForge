@@ -26,7 +26,7 @@ def execute_submission(record):
     problem_id = record["problem_id"]
 
     if problem_id is None:
-        result = run_code(record["code"])
+        result = run_code(record["code"], record["stdin"])
 
         return {
             **result,
@@ -70,7 +70,7 @@ def process_submission(submission_id):
                 tests_passed = NULL,
                 tests_total = NULL
             WHERE id = %s AND status = 'received'
-            RETURNING id, code, problem_id
+                RETURNING id, code, problem_id, stdin
             """,
             (submission_id,),
         ).fetchone()
