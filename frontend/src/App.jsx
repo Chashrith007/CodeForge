@@ -188,157 +188,156 @@ function App() {
     }
   }
 
+  const outcome = result?.verdict ?? result?.status
+  const labels = {
+    accepted: 'Accepted', completed: 'Completed', wrong_answer: 'Wrong answer',
+    runtime_error: 'Runtime error', timed_out: 'Time limit exceeded',
+    output_limit: 'Output limit exceeded', runner_error: 'Execution unavailable',
+    runner_timeout: 'Runner timed out', killed: 'Process stopped',
+    received: 'Queued', running: 'Running',
+  }
+  const resultLabel = labels[outcome] ?? outcome ?? 'Ready to run'
+  const resultTone = ['accepted', 'completed'].includes(outcome)
+    ? 'success'
+    : ['received', 'running'].includes(outcome) || (!outcome && isSubmitting)
+      ? 'pending'
+      : outcome ? 'failure' : 'idle'
+
   return (
-    <main>
-      <h1>CodeForge</h1>
-      <p>Solve challenges or run your own Python programs.</p>
+    <div className="forge-shell">
+      <header className="topbar">
+        <a className="brand" href="/" aria-label="CodeForge home">
+          <span className="brand-symbol" aria-hidden="true">{'</>'}</span>
+          <span>Code<span className="brand-light">Forge</span></span>
+        </a>
 
-      <nav aria-label="Execution mode">
-        <button
-          type="button"
-          aria-pressed={isChallenge}
-          disabled={isSubmitting}
-          onClick={() => changeMode('challenge')}
-        >
-          Challenges
-        </button>
+        <nav className="mode-switch" aria-label="Execution mode">
+          <button type="button" aria-pressed={isChallenge}
+            disabled={isSubmitting} onClick={() => changeMode('challenge')}>
+            Challenges
+          </button>
+          <button type="button" aria-pressed={!isChallenge}
+            disabled={isSubmitting} onClick={() => changeMode('playground')}>
+            Python Playground
+          </button>
+        </nav>
 
-        <button
-          type="button"
-          aria-pressed={!isChallenge}
-          disabled={isSubmitting}
-          onClick={() => changeMode('playground')}
-        >
-          Python Playground
-        </button>
-      </nav>
+        <span className="environment-label">Python 3.13 <span aria-hidden="true">/</span> Local workspace</span>
+      </header>
 
-      {isChallenge ? (
-        <section aria-label="Problem description">
-          {problemError ? (
-            <p role="alert">{problemError}</p>
-          ) : !problem ? (
-            <p role="status">Loading problem...</p>
-          ) : (
-            <>
-              <h2>{problem.title}</h2>
-              <p>{problem.description}</p>
+      <main className="workspace-main">
+        <div className="workspace-heading">
+          <div>
+            <p className="eyebrow">{isChallenge ? 'Practice / Python' : 'Explore / Python'}</p>
+            <h1>{isChallenge ? (problem?.title ?? 'Coding challenge') : 'Python Playground'}</h1>
+            <p className="subtitle">{isChallenge
+              ? 'Understand the problem. Write your solution. Put it to the test.'
+              : 'A space to experiment, work through an idea, and see what happens.'}</p>
+          </div>
+          <div className="limits" aria-label="Execution limits">
+            <span>5s per run</span><span>128 MiB memory</span>
+          </div>
+        </div>
 
-              <h3>Input format</h3>
-              <p>{problem.input_format}</p>
+        <div className="workspace-grid">
+          <aside className="panel briefing">
+            <div className="panel-bar">
+              <h2>{isChallenge ? 'Problem' : 'Run settings'}</h2>
+              <span className="subtle-label">{isChallenge ? 'Description' : 'Standard input'}</span>
+            </div>
+            <div className="briefing-body">
+              {isChallenge ? (
+                problemError ? <p className="error-notice" role="alert">{problemError}</p>
+                : !problem ? <p role="status">Loading problem…</p>
+                : <>
+                    <p className="problem-description">{problem.description}</p>
+                    <h3>Input format</h3><p>{problem.input_format}</p>
+                    <h3>Output format</h3><p>{problem.output_format}</p>
+                    <div className="example-card">
+                      <div className="example-title">Example</div>
+                      <div className="example-half"><span>Input</span><pre>{problem.example_input}</pre></div>
+                      <div className="example-half"><span>Expected output</span><pre>{problem.example_output}</pre></div>
+                    </div>
+                    <div className="help-note"><span className="note-mark" aria-hidden="true">i</span>
+                      <p>Your solution runs against the problem’s test cases. Print only the requested answer.</p>
+                    </div>
+                  </>
+              ) : <>
+                <label className="input-title" htmlFor="stdin">Standard input <span>Optional</span></label>
+                <p className="input-help">If your program uses <code>input()</code>, enter the values here before running.</p>
+                <textarea id="stdin" rows={7} value={stdin}
+                  onChange={(event) => setStdin(event.target.value)}
+                  spellCheck={false} disabled={isSubmitting}
+                  placeholder={'Sam\nOne input per line'} />
+                <p className="field-hint">One line for each input() call.</p>
+                <div className="help-note"><span className="note-mark" aria-hidden="true">i</span>
+                  <p>Input is supplied before execution. This is not an interactive terminal.</p>
+                </div>
+                <div className="run-notes">
+                  <h3>Execution limits</h3>
+                  <dl><div><dt>Time</dt><dd>5 seconds</dd></div><div><dt>Output</dt><dd>16 KiB</dd></div>
+                    <div><dt>Network</dt><dd>Disabled</dd></div></dl>
+                </div>
+              </>}
+            </div>
+          </aside>
 
-              <h3>Output format</h3>
-              <p>{problem.output_format}</p>
+          <div className="execution-column">
+            <section className="panel editor-panel" aria-label="Python editor">
+              <div className="panel-bar editor-bar">
+                <label className="file-label" htmlFor="code"><span className="file-icon" aria-hidden="true">Py</span>solution.py</label>
+                <span className="language-label">Python 3.13</span>
+              </div>
+              <textarea id="code" rows={14} value={code}
+                onChange={(event) => updateCode(event.target.value)} spellCheck={false}
+                autoCapitalize="off" autoComplete="off"
+                disabled={isSubmitting || (isChallenge && !problem)}
+                aria-label="Python code" placeholder="# Write your Python code here" />
+              <div className="editor-actions">
+                <span className="character-count">{code.length.toLocaleString()} characters</span>
+                <button className="run-button" type="button" onClick={submitCode}
+                  disabled={isSubmitting || code.trim().length === 0 || (isChallenge && !problem)}>
+                  <span aria-hidden="true">{isSubmitting ? '◌' : '▶'}</span>
+                  {isSubmitting ? 'Processing…' : isChallenge ? 'Submit solution' : 'Run code'}
+                </button>
+              </div>
+            </section>
 
-              <h3>Example input</h3>
-              <pre>{problem.example_input}</pre>
+            <section className="panel result-panel" aria-label="Submission result" aria-busy={isSubmitting}>
+              <div className="panel-bar">
+                <h2>{isChallenge ? 'Test results' : 'Output'}</h2>
+                <div className="result-toolbar">
+                  {submissionId && <button className="text-button" type="button" onClick={refreshResult} disabled={isSubmitting}>Check result</button>}
+                  <span className={`status-pill ${resultTone}`}>{!outcome && isSubmitting ? 'Submitting' : resultLabel}</span>
+                </div>
+              </div>
 
-              <h3>Expected output</h3>
-              <pre>{problem.example_output}</pre>
-            </>
-          )}
-        </section>
-      ) : (
-        <section>
-          <h2>Python Playground</h2>
-          <p>
-            Write Python code and run it. If it uses input(),
-            enter the required lines in Standard input below.
-          </p>
-          <p>
-            Each run has a five-second execution limit and a
-            16 KiB output limit.
-          </p>
-        </section>
-      )}
-
-      <label htmlFor="code">Python code</label>
-
-      <textarea
-        id="code"
-        rows={10}
-        value={code}
-        onChange={(event) => updateCode(event.target.value)}
-        spellCheck={false}
-        disabled={isSubmitting || (isChallenge && !problem)}
-      />
-
-      {!isChallenge && (
-        <section>
-          <label htmlFor="stdin">Standard input (optional)</label>
-          <p>Provide input before running. This is not an interactive terminal.</p>
-
-          <textarea
-            id="stdin"
-            rows={4}
-            value={stdin}
-            onChange={(event) => setStdin(event.target.value)}
-            spellCheck={false}
-            disabled={isSubmitting}
-          />
-        </section>
-      )}
-
-      <button
-        type="button"
-        onClick={submitCode}
-        disabled={
-          isSubmitting ||
-          code.trim().length === 0 ||
-          (isChallenge && !problem)
-        }
-      >
-        {isSubmitting
-          ? 'Working...'
-          : isChallenge
-            ? 'Submit solution'
-            : 'Run code'}
-      </button>
-
-      {submissionId && (
-        <button
-          type="button"
-          onClick={refreshResult}
-          disabled={isSubmitting}
-        >
-          Check result
-        </button>
-      )}
-
-      <p role="status">{message}</p>
-
-      {submissionId && <p>Submission ID: {submissionId}</p>}
-
-      {result && (
-        <section aria-label="Submission result">
-          <h2>Result</h2>
-          <p>Status: {result.status}</p>
-
-          {result.problem_id ? (
-            <>
-              <p>Verdict: {result.verdict ?? 'Pending'}</p>
-              <p>
-                Tests passed: {result.tests_passed ?? '—'}
-                {' / '}
-                {result.tests_total ?? '—'}
-              </p>
-            </>
-          ) : (
-            <>
-              <p>Exit code: {result.exit_code ?? '—'}</p>
-              <h3>Output and errors</h3>
-              <pre>
-                {result.output === null
-                  ? 'No output available yet.'
-                  : result.output === ''
-                    ? '(No output)'
-                    : result.output}
-              </pre>
-            </>
-          )}
-        </section>
-      )}
-    </main>
+              <div className="result-body">
+                {!result && !message ? (
+                  <div className="empty-result"><span aria-hidden="true" className="terminal-mark">{'>_'}</span>
+                    <div><h3>{isChallenge ? 'Ready when you are' : 'Your output will appear here'}</h3>
+                    <p>{isChallenge ? 'Submit your solution to see its verdict and test count.' : 'Run your code to see printed output, errors, and the exit code.'}</p></div>
+                  </div>
+                ) : <>
+                  {message && <p className="processing-message" role="status">{message}</p>}
+                  {result && (result.problem_id ? <>
+                    <div className="verdict-summary"><strong className={resultTone}>{resultLabel}</strong>
+                      <span><b>{result.tests_passed ?? '—'}</b> / {result.tests_total ?? '—'} tests passed</span>
+                    </div>
+                    <p className="field-hint">Execution status: {labels[result.status] ?? result.status}</p>
+                  </> : <>
+                    <div className="output-meta"><span>Output and errors</span><span>Exit code <b>{result.exit_code ?? '—'}</b></span></div>
+                    <pre className="program-output">{result.output === null ? 'No output available yet.' : result.output === '' ? '(No output)' : result.output}</pre>
+                  </>)}
+                </>}
+                {submissionId && <details className="submission-details"><summary>Submission details</summary><code>{submissionId}</code></details>}
+              </div>
+            </section>
+          </div>
+        </div>
+        <footer className="workspace-footer"><span>CodeForge · Python execution workspace</span><span>Local development build</span></footer>
+      </main>
+    </div>
   )
 }
 
