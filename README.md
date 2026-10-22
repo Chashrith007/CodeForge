@@ -248,3 +248,15 @@ not verify that condition. Recovery can re-execute a submission.
 | `recover_submission.py` | Operator-assisted recovery |
 | `frontend/src/App.jsx` | Editor, problem loading, submission, result polling |
 | `frontend/vite.config.js` | Development API proxy |
+
+## Screenshots
+
+### Coding Challenges
+Solve a Python challenge and see the verdict and test results.
+
+![CodeForge challenge accepted with five tests passed](docs/challenges.png)
+
+### Python Playground
+Run Python code with custom input and view the output.
+
+![CodeForge Python Playground with input and output](docs/playground.png)
