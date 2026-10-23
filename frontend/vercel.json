@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://code-forge-api.vercel.app/:path*"
+    }
+  ]
+}
