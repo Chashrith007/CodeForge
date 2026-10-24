@@ -1,16 +1,18 @@
+import logging
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from redis import Redis
 from redis.backoff import NoBackoff
-from redis.exceptions import RedisError
 from redis.retry import Retry
 
+from cloud_settings import TOPIC, check_admission, is_cloud, require_demo_access
 from database import get_connection
 from problems import PROBLEMS, get_public_problem
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
 
 queue_client = Redis(
     host="127.0.0.1",
@@ -33,6 +35,17 @@ class SubmissionRequest(BaseModel):
         if len(value.encode("utf-8")) > 16384:
             raise ValueError("Input must not exceed 16384 UTF-8 bytes.")
         return value
+
+
+@app.get("/configuration")
+def configuration():
+    cloud = is_cloud()
+    return {
+        "cloud": cloud,
+        "requires_access_code": cloud,
+        "runtime_label": "Python (cloud)" if cloud else "Python 3.13",
+        "memory_label": "128 MiB address space" if cloud else "128 MiB memory",
+    }
 
 
 @app.get("/health")
@@ -74,8 +87,9 @@ def get_problem(problem_id: str):
     return get_public_problem(problem_id)
 
 
-@app.get("/submissions/{submission_id}")
-def get_submission(submission_id: UUID):
+@app.get("/submissions/{submission_id}", dependencies=[Depends(require_demo_access)])
+def get_submission(submission_id: UUID, response: Response):
+    response.headers["Cache-Control"] = "no-store"
     with get_connection() as connection:
         record = connection.execute(
             """
@@ -103,7 +117,7 @@ def get_submission(submission_id: UUID):
     return record
 
 
-@app.post("/submissions")
+@app.post("/submissions", dependencies=[Depends(require_demo_access)])
 def submit_code(submission: SubmissionRequest):
     if submission.problem_id is not None:
         if submission.problem_id not in PROBLEMS:
@@ -121,6 +135,8 @@ def submit_code(submission: SubmissionRequest):
     submission_id = uuid4()
 
     with get_connection() as connection:
+        if is_cloud():
+            check_admission(connection)
         record = connection.execute(
             """
             INSERT INTO submissions (id, code, problem_id, stdin)
@@ -139,11 +155,21 @@ def submit_code(submission: SubmissionRequest):
         ).fetchone()
 
     try:
-        queue_client.rpush(
-            "codeforge:submissions",
-            str(submission_id),
-        )
-    except RedisError:
+        if is_cloud():
+            from vercel.queue import DuplicateIdempotencyKeyError
+            from vercel.queue.sync import QueueClient
+
+            try:
+                QueueClient(region="iad1").send(
+                    TOPIC, {"submission_id": str(submission_id)},
+                    idempotency_key=str(submission_id), retention=86400,
+                )
+            except DuplicateIdempotencyKeyError:
+                pass  # This submission was already delivered to the queue.
+        else:
+            queue_client.rpush("codeforge:submissions", str(submission_id))
+    except Exception as error:
+        logger.error("Queue delivery unconfirmed for %s (%s)", submission_id, type(error).__name__)
         raise HTTPException(
             status_code=503,
             detail={

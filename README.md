@@ -1,13 +1,14 @@
 # CodeForge
 
-A local Python coding-challenge platform built with React, FastAPI,
-PostgreSQL, Redis, and Docker.
+A Python coding-challenge platform and Playground built with React, FastAPI,
+and PostgreSQL. Local execution uses Redis and Docker; hosted execution uses
+Vercel Queues and Vercel Sandbox with Neon PostgreSQL.
 
 Users read a problem, submit a Python solution, and see a verdict and test
 counts. The current problem is **Add Two Integers**, with five test cases.
 The API also supports running code without selecting a problem.
 
-## How it works
+## How local execution works
 
 1. React loads the problem description from FastAPI.
 2. FastAPI validates the submission and commits it to PostgreSQL.
@@ -42,7 +43,7 @@ that failure. Comparisons strip surrounding whitespace. For judged submissions,
 output and exit code are null because the current judge returns aggregate results.
 Raw-run submissions return combined output and an exit code.
 
-## Execution restrictions
+## Local execution restrictions
 
 The runner uses `python:3.13-slim` with:
 
@@ -260,3 +261,16 @@ Solve a Python challenge and see the verdict and test results.
 Run Python code with custom input and view the output.
 
 ![CodeForge Python Playground with input and output](docs/playground.png)
+
+## Hosted demo
+
+The Vercel path requires a shared demo access code and limits submissions to
+10 per rolling 24 hours and two per minute. It uses a private queue subscriber
+and isolated cloud sandboxes; it does not depend on the developer's computer.
+Cloud programs use a 128 MiB address-space limit, rather than Docker's physical
+memory limit. The default Python image can change between provider releases.
+
+See [Cloud deployment](CLOUD_DEPLOYMENT.md) for setup, SQL migration, execution
+limits, failure behavior, and acceptance checks. Public problem descriptions
+remain readable without an access code. This demo has shared access, not
+individual accounts or a production multi-tenant authorization system.

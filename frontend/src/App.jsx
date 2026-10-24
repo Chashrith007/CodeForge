@@ -5,6 +5,8 @@ const wait = (milliseconds) =>
 
 function App() {
   const [mode, setMode] = useState('challenge')
+  const [configuration, setConfiguration] = useState(null)
+  const [accessCode, setAccessCode] = useState('')
   const [problem, setProblem] = useState(null)
   const [problemError, setProblemError] = useState('')
 
@@ -43,8 +45,15 @@ function App() {
         }
 
         const data = await response.json()
+        const configResponse = await fetch('/api/configuration', {
+          cache: 'no-store',
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
+        })
+        if (!configResponse.ok) throw new Error('Could not load execution settings.')
+        const config = await configResponse.json()
 
         if (active) {
+          setConfiguration(config)
           setProblem(data)
           setChallengeCode(data.starter_code)
         }
@@ -83,9 +92,17 @@ function App() {
     }
   }
 
+  function accessHeaders() {
+    return configuration?.requires_access_code
+      ? { Authorization: `Bearer ${accessCode}` }
+      : {}
+  }
+
   async function checkResult(id) {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    for (let attempt = 0; attempt < 180; attempt += 1) {
       const response = await fetch(`/api/submissions/${id}`, {
+        headers: accessHeaders(),
+        cache: 'no-store',
         signal: AbortSignal.timeout(10000),
       })
 
@@ -107,7 +124,7 @@ function App() {
           : 'Executing...'
       )
 
-      await wait(1000)
+      await wait(2000)
     }
 
     setMessage(
@@ -117,7 +134,11 @@ function App() {
   }
 
   async function submitCode() {
-    if (isSubmitting || (isChallenge && !problem)) return
+    if (isSubmitting || !configuration || (isChallenge && !problem)) return
+    if (configuration.requires_access_code && !accessCode.trim()) {
+      setMessage('Enter the demo access code first.')
+      return
+    }
 
     setIsSubmitting(true)
     setSubmissionId(null)
@@ -135,6 +156,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...accessHeaders(),
         },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(10000),
@@ -152,7 +174,7 @@ function App() {
             'Use Check result before attempting recovery.'
           )
         } else {
-          setMessage(`Submission failed: ${JSON.stringify(data.detail)}`)
+          setMessage(typeof data.detail === 'string' ? data.detail : 'Submission failed. Check your code and input.')
         }
 
         return
@@ -165,8 +187,7 @@ function App() {
       setMessage(
         savedId
           ? 'Submission saved, but checking failed. Use Check result.'
-          : 'Could not confirm submission. Check the API terminal ' +
-            'before submitting again.'
+          : 'Could not confirm submission. Wait and check the service before submitting again.'
       )
     } finally {
       setIsSubmitting(false)
@@ -222,7 +243,7 @@ function App() {
           </button>
         </nav>
 
-        <span className="environment-label">Python 3.13 <span aria-hidden="true">/</span> Local workspace</span>
+        <span className="environment-label">{configuration?.runtime_label ?? 'Python'} <span aria-hidden="true">/</span> {configuration?.cloud ? 'Cloud demo' : 'Local workspace'}</span>
       </header>
 
       <main className="workspace-main">
@@ -235,7 +256,7 @@ function App() {
               : 'A space to experiment, work through an idea, and see what happens.'}</p>
           </div>
           <div className="limits" aria-label="Execution limits">
-            <span>5s per run</span><span>128 MiB memory</span>
+            <span>5s per run</span><span>{configuration?.memory_label ?? 'Loading limits…'}</span>
           </div>
         </div>
 
@@ -286,17 +307,27 @@ function App() {
             <section className="panel editor-panel" aria-label="Python editor">
               <div className="panel-bar editor-bar">
                 <label className="file-label" htmlFor="code"><span className="file-icon" aria-hidden="true">Py</span>solution.py</label>
-                <span className="language-label">Python 3.13</span>
+                <span className="language-label">{configuration?.runtime_label ?? 'Python'}</span>
               </div>
               <textarea id="code" rows={14} value={code}
                 onChange={(event) => updateCode(event.target.value)} spellCheck={false}
                 autoCapitalize="off" autoComplete="off"
                 disabled={isSubmitting || (isChallenge && !problem)}
                 aria-label="Python code" placeholder="# Write your Python code here" />
+              {configuration?.requires_access_code && (
+                <div className="demo-access">
+                  <label htmlFor="demo-access-code">Demo access code</label>
+                  <input id="demo-access-code" type="password" value={accessCode}
+                    onChange={(event) => setAccessCode(event.target.value)}
+                    disabled={isSubmitting} autoComplete="off" spellCheck={false}
+                    aria-describedby="demo-access-help" />
+                  <p id="demo-access-help">Ask the project owner for access. Shared demo limit: 10 submissions per 24 hours.</p>
+                </div>
+              )}
               <div className="editor-actions">
                 <span className="character-count">{code.length.toLocaleString()} characters</span>
                 <button className="run-button" type="button" onClick={submitCode}
-                  disabled={isSubmitting || code.trim().length === 0 || (isChallenge && !problem)}>
+                  disabled={isSubmitting || !configuration || code.trim().length === 0 || (isChallenge && !problem)}>
                   <span aria-hidden="true">{isSubmitting ? '◌' : '▶'}</span>
                   {isSubmitting ? 'Processing…' : isChallenge ? 'Submit solution' : 'Run code'}
                 </button>
@@ -335,7 +366,7 @@ function App() {
             </section>
           </div>
         </div>
-        <footer className="workspace-footer"><span>CodeForge · Python execution workspace</span><span>Local development build</span></footer>
+        <footer className="workspace-footer"><span>CodeForge · Python execution workspace</span><span>{configuration?.cloud ? 'Cloud demo · Limited daily runs' : 'Local development build'}</span></footer>
       </main>
     </div>
   )

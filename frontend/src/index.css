@@ -130,3 +130,9 @@ textarea:disabled { opacity: .75; }
   .workspace-footer { flex-direction: column; gap: 6px; }
 }
 @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+
+.demo-access { padding: 16px 22px; border-top: 1px solid var(--border); }
+.demo-access label { display: block; margin-bottom: 8px; font-size: 12px; }
+.demo-access input { width: 100%; max-width: 420px; padding: 10px 12px; color: #eef2f7; background: #101317; border: 1px solid #64748b; border-radius: 6px; font: inherit; }
+.demo-access input:focus-visible { outline: 2px solid #f5ad5b; outline-offset: 3px; }
+.demo-access p { margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--muted); }

@@ -1,0 +1,5 @@
+[tool.vercel]
+entrypoint = "main:app"
+
+[[tool.vercel.subscribers]]
+entrypoint = "cloud_worker"
