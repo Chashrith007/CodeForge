@@ -93,18 +93,41 @@ class IntegrationTests(unittest.TestCase):
         self.assertFalse(data['requires_access_code'])
 
     def test_daily_cap_rejects_before_insert(self):
-        context, connection = self.connection(None, {'daily': 10, 'recent': 0})
+        context, connection = self.connection(None, {'daily': 100, 'recent': 0})
         with patch.object(main, 'get_connection', return_value=context), patch.object(queue_sync, 'QueueClient') as queue:
             status, _ = request('POST', '/submissions', {'code': 'print(2)'})
         self.assertEqual(status, 429)
         self.assertEqual(connection.execute.call_count, 2)
         queue.assert_not_called()
 
-    def test_burst_cap_rejects(self):
+    def test_third_submission_in_window_rejected(self):
         context, _ = self.connection(None, {'daily': 2, 'recent': 2})
         with patch.object(main, 'get_connection', return_value=context):
             status, _ = request('POST', '/submissions', {'code': 'print(2)'})
         self.assertEqual(status, 429)
+
+    def test_100th_submission_allowed_after_cooldown(self):
+        context, connection = self.connection(None, {'daily': 99, 'recent': 0}, {'id': str(uuid4()), 'status': 'received'})
+        with patch.object(main, 'get_connection', return_value=context), patch.object(queue_sync, 'QueueClient') as queue:
+            status, _ = request('POST', '/submissions', {'code': 'print(2)'})
+        self.assertEqual(status, 200)
+        queue.return_value.send.assert_called_once()
+        self.assertEqual(connection.execute.call_args_list[1].args[1], (10,))
+
+    def test_second_submission_in_window_allowed(self):
+        context, _ = self.connection(None, {'daily': 1, 'recent': 1}, {'id': str(uuid4()), 'status': 'received'})
+        with patch.object(main, 'get_connection', return_value=context), patch.object(queue_sync, 'QueueClient') as queue:
+            status, _ = request('POST', '/submissions', {'code': 'print(2)'})
+        self.assertEqual(status, 200)
+        queue.return_value.send.assert_called_once()
+
+    def test_cooldown_returns_retry_after(self):
+        from cloud_settings import check_admission
+        _, connection = self.connection(None, {'daily': 3, 'recent': 2})
+        with self.assertRaises(HTTPException) as error:
+            check_admission(connection)
+        self.assertEqual(error.exception.status_code, 429)
+        self.assertEqual(error.exception.headers['Retry-After'], '10')
 
     def test_cloud_publishes_only_id_after_commit(self):
         saved_id = str(uuid4())

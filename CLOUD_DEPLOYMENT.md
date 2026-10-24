@@ -42,8 +42,8 @@ no access-code field or authorization header requirement. Anyone with a
 submission ID can retrieve its output; do not submit private information.
 There are no user accounts or private submission ownership.
 
-Admission is limited globally to 10 saved submissions in a rolling 24 hours
-and two per minute, including failed submissions. A PostgreSQL transaction
+Admission is limited globally to 100 saved submissions in a rolling 24 hours
+with a shared limit of two submissions per rolling 10 seconds, including failed submissions. A PostgreSQL transaction
 lock serializes quota checks with insertion. A challenge can start up to five
 sandboxes; execution stops at its first failed test. These application limits
 reduce usage but are not a guarantee of remaining platform quota.
@@ -87,7 +87,7 @@ Do not run the local Redis recovery script against hosted submissions.
 4. Challenge: `print(999)`; expect `wrong_answer`.
 5. Confirm runtime error, time limit and output limit results as allowance permits.
 
-Allow at least a minute between pairs of submissions. Inspect the backend queue
+Allow at least two submissions per 10 seconds. Inspect the backend queue
 and function logs if a submission stays received. Redact tokens and submitted
 private code before sharing logs.
 

@@ -265,7 +265,7 @@ Run Python code with custom input and view the output.
 ## Hosted demo
 
 The Vercel demo allows public execution without an access code and limits submissions to
-10 per rolling 24 hours and two per minute. It uses a private queue subscriber
+100 per rolling 24 hours with a shared limit of two submissions per rolling 10 seconds. It uses a private queue subscriber
 and isolated cloud sandboxes; it does not depend on the developer's computer.
 Cloud programs use a 128 MiB address-space limit, rather than Docker's physical
 memory limit. The default Python image can change between provider releases.

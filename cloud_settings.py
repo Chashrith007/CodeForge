@@ -4,8 +4,9 @@ import os
 from fastapi import HTTPException
 
 TOPIC = "codeforge-submissions"
-DAILY_LIMIT = 10
-MINUTE_LIMIT = 2
+DAILY_LIMIT = 100
+WINDOW_SECONDS = 10
+WINDOW_LIMIT = 2
 STALE_SECONDS = 360  # Longer than the configured 300-second function lifetime.
 
 
@@ -21,13 +22,18 @@ def check_admission(connection):
         """
         SELECT count(*) AS daily,
                count(*) FILTER (
-                   WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '1 minute'
+                   WHERE created_at >= CURRENT_TIMESTAMP - make_interval(secs => %s)
                ) AS recent
         FROM submissions
         WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
-        """
+        """,
+        (WINDOW_SECONDS,),
     ).fetchone()
     if counts["daily"] >= DAILY_LIMIT:
-        raise HTTPException(429, "The demo has reached its 10 submissions per 24 hours limit.")
-    if counts["recent"] >= MINUTE_LIMIT:
-        raise HTTPException(429, "Please wait a minute before submitting more code.")
+        raise HTTPException(429, "The demo has reached its 100 submissions per 24 hours limit.")
+    if counts["recent"] >= WINDOW_LIMIT:
+        raise HTTPException(
+            429,
+            "The demo allows two submissions per 10 seconds. Please wait up to 10 seconds and try again.",
+            headers={"Retry-After": str(WINDOW_SECONDS)},
+        )

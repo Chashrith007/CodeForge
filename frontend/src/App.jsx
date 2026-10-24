@@ -303,7 +303,7 @@ function App() {
                 disabled={isSubmitting || (isChallenge && !problem)}
                 aria-label="Python code" placeholder="# Write your Python code here" />
               {configuration?.cloud && (
-                <p className="public-demo-note">Public demo · Shared limit: 10 submissions per 24 hours, two per minute.</p>
+                <p className="public-demo-note">Public demo · Shared limit: 100 submissions per 24 hours, two submissions per 10 seconds.</p>
               )}
               <div className="editor-actions">
                 <span className="character-count">{code.length.toLocaleString()} characters</span>
