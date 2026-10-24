@@ -6,7 +6,6 @@ const wait = (milliseconds) =>
 function App() {
   const [mode, setMode] = useState('challenge')
   const [configuration, setConfiguration] = useState(null)
-  const [accessCode, setAccessCode] = useState('')
   const [problem, setProblem] = useState(null)
   const [problemError, setProblemError] = useState('')
 
@@ -92,16 +91,10 @@ function App() {
     }
   }
 
-  function accessHeaders() {
-    return configuration?.requires_access_code
-      ? { Authorization: `Bearer ${accessCode}` }
-      : {}
-  }
 
   async function checkResult(id) {
     for (let attempt = 0; attempt < 180; attempt += 1) {
       const response = await fetch(`/api/submissions/${id}`, {
-        headers: accessHeaders(),
         cache: 'no-store',
         signal: AbortSignal.timeout(10000),
       })
@@ -135,10 +128,6 @@ function App() {
 
   async function submitCode() {
     if (isSubmitting || !configuration || (isChallenge && !problem)) return
-    if (configuration.requires_access_code && !accessCode.trim()) {
-      setMessage('Enter the demo access code first.')
-      return
-    }
 
     setIsSubmitting(true)
     setSubmissionId(null)
@@ -156,7 +145,6 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...accessHeaders(),
         },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(10000),
@@ -314,15 +302,8 @@ function App() {
                 autoCapitalize="off" autoComplete="off"
                 disabled={isSubmitting || (isChallenge && !problem)}
                 aria-label="Python code" placeholder="# Write your Python code here" />
-              {configuration?.requires_access_code && (
-                <div className="demo-access">
-                  <label htmlFor="demo-access-code">Demo access code</label>
-                  <input id="demo-access-code" type="password" value={accessCode}
-                    onChange={(event) => setAccessCode(event.target.value)}
-                    disabled={isSubmitting} autoComplete="off" spellCheck={false}
-                    aria-describedby="demo-access-help" />
-                  <p id="demo-access-help">Ask the project owner for access. Shared demo limit: 10 submissions per 24 hours.</p>
-                </div>
+              {configuration?.cloud && (
+                <p className="public-demo-note">Public demo · Shared limit: 10 submissions per 24 hours, two per minute.</p>
               )}
               <div className="editor-actions">
                 <span className="character-count">{code.length.toLocaleString()} characters</span>

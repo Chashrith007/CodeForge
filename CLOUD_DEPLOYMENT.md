@@ -20,10 +20,8 @@ that variable for ordinary local development.
 1. Run `add_cloud_columns.sql` in the Neon SQL Editor, on the database/branch
    used by `code-forge-api`. It adds a nullable timestamp and an index without
    deleting existing submissions.
-2. Set `DEMO_ACCESS_CODE` on the **backend** Vercel project. Use a randomly
-   generated value of at least 24 characters. Set it for Production and Preview
-   if both should execute. Keep `DATABASE_URL` configured there too. Never put
-   the access code in a `VITE_*` variable, source file, README, or screenshot.
+2. Keep `DATABASE_URL` configured on the backend. The public demo no longer
+   requires `DEMO_ACCESS_CODE`; the old variable can be removed or left unused.
 3. Copy the reviewed replacement files. Install the updated requirements.
    `check_cloud_integration.py` runs offline and does not spend cloud allowance.
 4. Run frontend lint and build, inspect changed files, then commit and push.
@@ -39,10 +37,10 @@ variables. No Redis service is needed for the hosted path.
 
 ## Demo access and limits
 
-Problem descriptions and execution configuration are public. Cloud submissions
-and result retrieval require `Authorization: Bearer <demo access code>`.
-The browser asks for the code and keeps it only in React memory. Reloading the
-page clears it. This is shared demo access, not individual user accounts.
+Problem descriptions, submissions, and result retrieval are public. There is
+no access-code field or authorization header requirement. Anyone with a
+submission ID can retrieve its output; do not submit private information.
+There are no user accounts or private submission ownership.
 
 Admission is limited globally to 10 saved submissions in a rolling 24 hours
 and two per minute, including failed submissions. A PostgreSQL transaction
@@ -81,7 +79,8 @@ Do not run the local Redis recovery script against hosted submissions.
 
 ## Hosted acceptance checks after deployment
 
-1. Without the access code, submission returns 401 (no sandbox starts).
+1. Confirm the page shows no access-code field. An unauthenticated submission
+   must be accepted when quota remains; quota exhaustion must still return 429.
 2. Playground: `name = input(); print("Hello,", name)` with `Sam` as input
    produces `Hello, Sam` and exit code 0.
 3. Challenge: sum two integers; expect `accepted`, 5/5.
@@ -95,7 +94,7 @@ private code before sharing logs.
 ## Validation status
 
 The owner reports all seven cloud-runner checks passed with sandbox cleanup.
-The integration's 20 offline handler/worker tests passed with mocked database
+The integration's offline handler/worker tests cover public access and quotas with mocked database
 and queue calls; they are not live PostgreSQL concurrency or hosted delivery
 tests. The Windows sandbox prevents asyncio's loopback socket, so tests call
 registered route handlers/dependencies directly rather than opening HTTP.

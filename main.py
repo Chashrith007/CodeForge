@@ -1,13 +1,13 @@
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from redis import Redis
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 
-from cloud_settings import TOPIC, check_admission, is_cloud, require_demo_access
+from cloud_settings import TOPIC, check_admission, is_cloud
 from database import get_connection
 from problems import PROBLEMS, get_public_problem
 
@@ -42,7 +42,7 @@ def configuration():
     cloud = is_cloud()
     return {
         "cloud": cloud,
-        "requires_access_code": cloud,
+        "requires_access_code": False,
         "runtime_label": "Python (cloud)" if cloud else "Python 3.13",
         "memory_label": "128 MiB address space" if cloud else "128 MiB memory",
     }
@@ -87,7 +87,7 @@ def get_problem(problem_id: str):
     return get_public_problem(problem_id)
 
 
-@app.get("/submissions/{submission_id}", dependencies=[Depends(require_demo_access)])
+@app.get("/submissions/{submission_id}")
 def get_submission(submission_id: UUID, response: Response):
     response.headers["Cache-Control"] = "no-store"
     with get_connection() as connection:
@@ -117,7 +117,7 @@ def get_submission(submission_id: UUID, response: Response):
     return record
 
 
-@app.post("/submissions", dependencies=[Depends(require_demo_access)])
+@app.post("/submissions")
 def submit_code(submission: SubmissionRequest):
     if submission.problem_id is not None:
         if submission.problem_id not in PROBLEMS:

@@ -264,7 +264,7 @@ Run Python code with custom input and view the output.
 
 ## Hosted demo
 
-The Vercel path requires a shared demo access code and limits submissions to
+The Vercel demo allows public execution without an access code and limits submissions to
 10 per rolling 24 hours and two per minute. It uses a private queue subscriber
 and isolated cloud sandboxes; it does not depend on the developer's computer.
 Cloud programs use a 128 MiB address-space limit, rather than Docker's physical
@@ -272,5 +272,5 @@ memory limit. The default Python image can change between provider releases.
 
 See [Cloud deployment](CLOUD_DEPLOYMENT.md) for setup, SQL migration, execution
 limits, failure behavior, and acceptance checks. Public problem descriptions
-remain readable without an access code. This demo has shared access, not
-individual accounts or a production multi-tenant authorization system.
+and results are public. Anyone with a submission ID can retrieve its output.
+This demo has no individual accounts or private submission ownership.

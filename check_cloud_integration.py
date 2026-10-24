@@ -17,7 +17,6 @@ sys.modules['database'] = fake_database
 
 import main
 import cloud_worker
-from cloud_settings import require_demo_access
 from fastapi import HTTPException
 from vercel.queue import RetryAfter
 from vercel.queue import sync as queue_sync
@@ -70,28 +69,25 @@ class IntegrationTests(unittest.TestCase):
     def test_configuration_is_public_and_accurate(self):
         status, data = request('GET', '/configuration')
         self.assertEqual(status, 200)
-        self.assertTrue(data['requires_access_code'])
+        self.assertFalse(data['requires_access_code'])
         self.assertEqual(data['memory_label'], '128 MiB address space')
 
-    def test_unauthorized_post_never_saves_or_queues(self):
-        with patch.object(main, 'get_connection') as db, patch.object(queue_sync, 'QueueClient') as queue:
+    def test_public_post_needs_no_secret(self):
+        context, _ = self.connection(None, {'daily': 0, 'recent': 0}, {'id': str(uuid4()), 'status': 'received'})
+        with patch.dict(os.environ, {'DEMO_ACCESS_CODE': ''}), patch.object(main, 'get_connection', return_value=context), patch.object(queue_sync, 'QueueClient') as queue:
             status, _ = request('POST', '/submissions', {'code': 'print(2)'})
-        self.assertEqual(status, 401)
-        db.assert_not_called()
-        queue.assert_not_called()
+        self.assertEqual(status, 200)
+        queue.return_value.send.assert_called_once()
 
-    def test_missing_secret_fails_closed(self):
-        with patch.dict(os.environ, {'DEMO_ACCESS_CODE': ''}):
-            status, _ = request('POST', '/submissions', {'code': 'print(2)'}, SECRET)
-        self.assertEqual(status, 503)
+    def test_result_can_be_read_without_secret(self):
+        context, _ = self.connection({'status': 'completed', 'output': '2'})
+        with patch.object(main, 'get_connection', return_value=context):
+            status, data = request('GET', f'/submissions/{uuid4()}')
+        self.assertEqual(status, 200)
+        self.assertEqual(data['output'], '2')
 
-    def test_wrong_secret_protects_result(self):
-        status, _ = request('GET', f'/submissions/{uuid4()}', token='wrong')
-        self.assertEqual(status, 401)
-
-    def test_local_mode_requires_no_secret(self):
+    def test_local_configuration_still_works(self):
         with patch.dict(os.environ, {'VERCEL': ''}):
-            require_demo_access(None)
             status, data = request('GET', '/configuration')
         self.assertEqual(status, 200)
         self.assertFalse(data['requires_access_code'])
@@ -99,7 +95,7 @@ class IntegrationTests(unittest.TestCase):
     def test_daily_cap_rejects_before_insert(self):
         context, connection = self.connection(None, {'daily': 10, 'recent': 0})
         with patch.object(main, 'get_connection', return_value=context), patch.object(queue_sync, 'QueueClient') as queue:
-            status, _ = request('POST', '/submissions', {'code': 'print(2)'}, SECRET)
+            status, _ = request('POST', '/submissions', {'code': 'print(2)'})
         self.assertEqual(status, 429)
         self.assertEqual(connection.execute.call_count, 2)
         queue.assert_not_called()
@@ -107,7 +103,7 @@ class IntegrationTests(unittest.TestCase):
     def test_burst_cap_rejects(self):
         context, _ = self.connection(None, {'daily': 2, 'recent': 2})
         with patch.object(main, 'get_connection', return_value=context):
-            status, _ = request('POST', '/submissions', {'code': 'print(2)'}, SECRET)
+            status, _ = request('POST', '/submissions', {'code': 'print(2)'})
         self.assertEqual(status, 429)
 
     def test_cloud_publishes_only_id_after_commit(self):
@@ -117,7 +113,7 @@ class IntegrationTests(unittest.TestCase):
         context.__exit__.side_effect = lambda *args: events.append('commit') or False
         with patch.object(main, 'get_connection', return_value=context), patch.object(queue_sync, 'QueueClient') as queue, patch.object(main, 'queue_client') as redis:
             queue.return_value.send.side_effect = lambda *args, **kwargs: events.append('publish')
-            status, data = request('POST', '/submissions', {'code': 'print(2)'}, SECRET)
+            status, data = request('POST', '/submissions', {'code': 'print(2)'})
             args, kwargs = queue.return_value.send.call_args
         self.assertEqual(status, 200)
         self.assertEqual(events, ['commit', 'publish'])
@@ -130,7 +126,7 @@ class IntegrationTests(unittest.TestCase):
         context, _ = self.connection(None, {'daily': 0, 'recent': 0}, {'id': saved_id, 'status': 'received'})
         with patch.object(main, 'get_connection', return_value=context), patch.object(queue_sync, 'QueueClient') as queue:
             queue.return_value.send.side_effect = RuntimeError('offline')
-            status, data = request('POST', '/submissions', {'code': 'print(2)'}, SECRET)
+            status, data = request('POST', '/submissions', {'code': 'print(2)'})
         self.assertEqual(status, 503)
         self.assertIsNotNone(data['detail']['id'])
 
